@@ -1,60 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   ScrollView,
   Alert,
-  FlatList,
-  TouchableOpacity,
   StyleSheet,
+  Modal,
+  Pressable,
+  TextInput,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Card } from '@/components/ui/Card';
-import { searchDrinksCatalog, createDrinkLog, updateDrinkLog } from '@/lib/api';
+import { createDrinkLog, updateDrinkLog } from '@/lib/api';
 import { estimateStd, UNITS } from '@/lib/stdDrink';
-import { DrinkLog, CatalogItem, DrinkType } from '@/types/db';
-import { useQuery } from '@tanstack/react-query';
+import { DrinkLog, DrinkType } from '@/types/db';
+
+const TYPE_OPTIONS = ['beer','wine','spirits','cocktail','seltzer','other'] as const;
 
 export default function ManualLogScreen() {
   const params = useLocalSearchParams();
-  const editingLog = params.logId
-    ? (JSON.parse(params.logId as string) as DrinkLog)
-    : null;
+  const editingLog = useMemo<DrinkLog | null>(() => {
+    try {
+      return params?.logId ? (JSON.parse(params.logId as string) as DrinkLog) : null;
+    } catch {
+      return null;
+    }
+  }, [params?.logId]);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
-  const [_selectedDrink, setSelectedDrink] = useState<CatalogItem | null>(null);
-  const [type, setType] = useState<DrinkType>('beer');
-  const [qty, setQty] = useState('');
-  const [unit, setUnit] = useState('oz');
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState<DrinkType>(editingLog?.type ?? 'beer');
+  const [qty, setQty] = useState(editingLog ? String(editingLog.qty) : '1');
+  const [unit, setUnit] = useState(editingLog?.unit ?? 'oz');
   const [loading, setLoading] = useState(false);
 
-  // Initialize form if editing
-  useEffect(() => {
-    if (editingLog) {
-      setType(editingLog.type);
-      setQty(editingLog.qty.toString());
-      setUnit(editingLog.unit);
-      setNotes(editingLog.notes || '');
-    }
-  }, [editingLog]);
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [unitModalVisible, setUnitModalVisible] = useState(false);
+  const [tempType, setTempType] = useState<DrinkType>(type || 'beer');
+  const [tempUnit, setTempUnit] = useState<string>(unit || UNITS[0]);
 
-  const { data: searchResults = [] } = useQuery({
-    queryKey: ['drinks-search', searchQuery],
-    queryFn: () => searchDrinksCatalog(searchQuery),
-    enabled: searchQuery.length > 0,
-  });
 
-  const handleDrinkSelect = (drink: CatalogItem) => {
-    setSelectedDrink(drink);
-    setType(drink.category);
-    setQty(drink.default_qty.toString());
-    setUnit(drink.default_unit);
-    setSearchQuery(drink.label);
-  };
 
   const handleSave = async () => {
     if (!qty || parseFloat(qty) <= 0) {
@@ -76,7 +60,6 @@ export default function ManualLogScreen() {
         qty: parseFloat(qty),
         unit,
         std_drinks,
-        notes: notes.trim() || null,
       };
 
       if (editingLog) {
@@ -93,121 +76,150 @@ export default function ManualLogScreen() {
     }
   };
 
-  const renderSearchResult = ({ item }: { item: CatalogItem }) => (
-    <TouchableOpacity
-      onPress={() => handleDrinkSelect(item)}
-      style={styles.searchResult}
-    >
-      <Text style={styles.searchResultTitle}>{item.label}</Text>
-      <Text style={styles.searchResultSubtitle}>
-        {item.default_qty} {item.default_unit} • {item.default_std} std
-      </Text>
-    </TouchableOpacity>
-  );
-
   return (
-    <ScrollView style={styles.container}>
-      <Card style={styles.card}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
+      <View style={styles.card} pointerEvents="box-none">
         <Text style={styles.title}>
           {editingLog ? 'Edit Drink' : 'Log Drink Manually'}
         </Text>
 
-        <Input
-          label="Search Drinks"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search for a drink type..."
-        />
-
-        {searchQuery.length > 0 && searchResults.length > 0 && (
-          <Card style={styles.searchResults}>
-            <FlatList
-              data={searchResults}
-              renderItem={renderSearchResult}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-            />
-          </Card>
-        )}
-
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Drink Type</Text>
-          <View style={styles.typeButtons}>
-            {(
-              [
-                'beer',
-                'wine',
-                'spirits',
-                'cocktail',
-                'seltzer',
-                'other',
-              ] as DrinkType[]
-            ).map((drinkType) => (
-              <TouchableOpacity
-                key={drinkType}
-                onPress={() => setType(drinkType)}
-                style={[
-                  styles.typeButton,
-                  type === drinkType && styles.typeButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    type === drinkType && styles.typeButtonTextActive,
-                  ]}
-                >
-                  {drinkType}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Pressable
+            onPress={() => {
+              setTempType(type || 'beer');
+              setTypeModalVisible(true);
+            }}
+            style={styles.fieldContainer}
+          >
+            <Text style={styles.fieldText}>{type || 'beer'}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.row}>
           <View style={styles.halfWidth}>
-            <Input
-              label="Quantity"
+            <Text style={styles.sectionTitle}>Quantity</Text>
+            <TextInput
               value={qty}
-              onChangeText={setQty}
+              onFocus={() => {
+                console.log('[Manual] Quantity focus');
+              }}
+              onChangeText={(t) => {
+                console.log('[Manual] onChangeText raw:', t);
+                const cleaned = t.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+                const parts = cleaned.split('.');
+                const normalized = parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : cleaned;
+                console.log('[Manual] qty ->', normalized);
+                setQty(normalized);
+              }}
               placeholder="12"
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
+              inputMode="decimal"
+              style={styles.textInput}
+              returnKeyType="done"
+              editable
+              autoCorrect={false}
+              autoCapitalize="none"
             />
           </View>
           <View style={styles.halfWidth}>
             <Text style={styles.sectionTitle}>Unit</Text>
-            <View style={styles.unitButtons}>
-              {UNITS.map((unitOption) => (
-                <TouchableOpacity
-                  key={unitOption}
-                  onPress={() => setUnit(unitOption)}
-                  style={[
-                    styles.unitButton,
-                    unit === unitOption && styles.unitButtonActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.unitButtonText,
-                      unit === unitOption && styles.unitButtonTextActive,
-                    ]}
-                  >
-                    {unitOption}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Pressable
+              onPress={() => {
+                setTempUnit(unit || UNITS[0]);
+                setUnitModalVisible(true);
+              }}
+              style={styles.fieldContainer}
+            >
+              <Text style={styles.fieldText}>{unit || UNITS[0]}</Text>
+            </Pressable>
           </View>
         </View>
 
-        <Input
-          label="Notes (Optional)"
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Any additional notes..."
-          multiline
-          numberOfLines={3}
-        />
+        {/* Type Picker Modal */}
+        <Modal
+          visible={typeModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setTypeModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Drink Type</Text>
+              </View>
+              <View style={styles.modalContent}>
+                <Picker
+                  selectedValue={tempType}
+                  onValueChange={(v) => setTempType(v as DrinkType)}
+                  style={styles.modalPicker}
+                >
+                  <Picker.Item label="Beer" value="beer" />
+                  <Picker.Item label="Wine" value="wine" />
+                  <Picker.Item label="Spirits" value="spirits" />
+                  <Picker.Item label="Cocktail" value="cocktail" />
+                  <Picker.Item label="Seltzer" value="seltzer" />
+                  <Picker.Item label="Other" value="other" />
+                </Picker>
+              </View>
+              <View style={styles.modalActions}>
+                <Pressable style={styles.modalBtnOutline} onPress={() => setTypeModalVisible(false)}>
+                  <Text style={styles.modalBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.modalBtn}
+                  onPress={() => {
+                    setType(tempType);
+                    setTypeModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalBtnTextPrimary}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Unit Picker Modal */}
+        <Modal
+          visible={unitModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setUnitModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Unit</Text>
+              </View>
+              <View style={styles.modalContent}>
+                <Picker
+                  selectedValue={tempUnit}
+                  onValueChange={(v) => setTempUnit(v)}
+                  style={styles.modalPicker}
+                >
+                  {UNITS.map((u) => (
+                    <Picker.Item key={u} label={u} value={u} />
+                  ))}
+                </Picker>
+              </View>
+              <View style={styles.modalActions}>
+                <Pressable style={styles.modalBtnOutline} onPress={() => setUnitModalVisible(false)}>
+                  <Text style={styles.modalBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.modalBtn}
+                  onPress={() => {
+                    setUnit(tempUnit);
+                    setUnitModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalBtnTextPrimary}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Button
           title={editingLog ? 'Save Changes' : 'Log Drink'}
@@ -222,7 +234,7 @@ export default function ManualLogScreen() {
           onPress={() => router.back()}
           style={styles.cancelButton}
         />
-      </Card>
+      </View>
     </ScrollView>
   );
 }
@@ -241,22 +253,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 24,
   },
-  searchResults: {
-    marginBottom: 16,
-    maxHeight: 160,
-  },
-  searchResult: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  searchResultTitle: {
-    fontWeight: '500',
-  },
-  searchResultSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
   section: {
     marginBottom: 16,
   },
@@ -266,30 +262,6 @@ const styles = StyleSheet.create({
     color: '#374151',
     marginBottom: 8,
   },
-  typeButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  typeButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-  },
-  typeButtonActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  typeButtonText: {
-    textTransform: 'capitalize',
-    color: '#374151',
-  },
-  typeButtonTextActive: {
-    color: '#ffffff',
-  },
   row: {
     flexDirection: 'row',
     gap: 16,
@@ -298,33 +270,91 @@ const styles = StyleSheet.create({
   halfWidth: {
     flex: 1,
   },
-  unitButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  unitButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-  },
-  unitButtonActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  unitButtonText: {
-    color: '#374151',
-  },
-  unitButtonTextActive: {
-    color: '#ffffff',
-  },
   saveButton: {
     marginTop: 16,
   },
   cancelButton: {
     marginTop: 8,
+  },
+  fieldContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    height: 50,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 16,
+  },
+  fieldText: {
+    fontSize: 16,
+    color: '#111827',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingBottom: 16,
+  },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContent: {
+    height: 200,
+  },
+  modalPicker: {
+    height: 200,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 12,
+    marginTop: 12,
+  },
+  modalBtn: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  modalBtnOutline: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  modalBtnText: {
+    fontSize: 16,
+    color: '#111827',
+  },
+  modalBtnTextPrimary: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  textInput: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    fontSize: 16,
   },
 });

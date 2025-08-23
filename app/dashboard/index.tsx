@@ -60,12 +60,6 @@ export default function DashboardScreen() {
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Dashboard</Text>
-          <Button
-            title="Logout"
-            variant="outline"
-            size="sm"
-            onPress={handleLogout}
-          />
         </View>
 
         {/* Range Selector */}
@@ -138,6 +132,13 @@ export default function DashboardScreen() {
             title="📸 Log New Drink"
             onPress={() => router.push('/')}
             size="lg"
+          />
+          <Button
+            title="Log out"
+            variant="outline"
+            size="md"
+            onPress={handleLogout}
+            style={{ marginTop: 12 }}
           />
         </View>
       </View>

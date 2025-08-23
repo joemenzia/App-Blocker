@@ -1,6 +1,5 @@
 import { supabase } from './supabase';
 import { DrinkLog, CatalogItem, DrinkType } from '@/types/db';
-import * as FileSystem from 'expo-file-system';
 
 // Mock classifier for development
 const MOCK_CLASSIFIER = {
@@ -20,31 +19,25 @@ export async function uploadPhotoAsync(
   } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
-  const fileName = `${user.id}/${Date.now()}.jpg`;
-  const path = `drinks/${fileName}`;
+  // Object key inside the bucket: <userId>/<timestamp>.jpg
+  const path = `${user.id}/${Date.now()}.jpg`;
 
-  const fileData = await FileSystem.readAsStringAsync(localUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  // RN-friendly File-like object supported by supabase-js in React Native
+  const file = {
+    uri: localUri,
+    type: 'image/jpeg',
+    name: 'photo.jpg',
+  } as any;
 
   const { error } = await supabase.storage
-    .from('drinks')
-    .upload(path, decode(fileData), {
+    .from('photos')
+    .upload(path, file, {
       contentType: 'image/jpeg',
       upsert: true,
     });
 
   if (error) throw error;
   return { path };
-}
-
-function decode(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
 }
 
 export async function classifyPhoto(path: string): Promise<{

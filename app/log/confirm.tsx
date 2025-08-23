@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Alert, ScrollView, Image, Modal, Pressable } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
 import { Button } from '@/components/ui/Button';
@@ -10,11 +10,31 @@ import { UNITS } from '@/lib/stdDrink';
 
 export default function ConfirmScreen() {
   const params = useLocalSearchParams();
-  const [type, setType] = useState((params.type as string) || 'beer');
+  const TYPE_OPTIONS = ['beer','wine','spirits','cocktail','seltzer','other'] as const;
+  const typeParam = (params.type as string) || '';
+  const initialType = TYPE_OPTIONS.includes(typeParam as any) ? (typeParam as any) : 'beer';
+
+  const unitParam = (params.unit as string) || '';
+  const initialUnit = UNITS.includes(unitParam) ? unitParam : UNITS[0];
+
+  const [type, setType] = useState<(typeof TYPE_OPTIONS)[number]>(initialType);
   const [qty, setQty] = useState((params.qty as string) || '1');
-  const [unit, setUnit] = useState((params.unit as string) || 'bottle');
-  const [notes, setNotes] = useState((params.notes as string) || '');
+  const [unit, setUnit] = useState<string>(initialUnit);
   const [loading, setLoading] = useState(false);
+
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [unitModalVisible, setUnitModalVisible] = useState(false);
+  const [tempType, setTempType] = useState<(typeof TYPE_OPTIONS)[number]>(type || 'beer');
+  const [tempUnit, setTempUnit] = useState<string>(unit || UNITS[0]);
+
+  useEffect(() => {
+    if (!type) {
+      setType('beer');
+    }
+    if (!unit) {
+      setUnit(UNITS[0]);
+    }
+  }, []);
 
   const confidence = parseFloat((params.confidence as string) || '0.8');
 
@@ -28,12 +48,11 @@ export default function ConfirmScreen() {
     try {
       await createDrinkLog({
         type: type as any,
-        quantity: parseFloat(qty),
+        qty: parseFloat(qty),
         unit,
-        notes: notes.trim() || null,
-        photo_url: (params.photo_url as string) || null,
-        ai_confidence: confidence,
-        consumed_at: new Date().toISOString(),
+        std_drinks: parseFloat(qty), // temporary: 1 qty = 1 standard drink; refine later
+        photo_path: (params.photo_url as string) || null,
+        logged_at: new Date().toISOString(),
       });
 
       Alert.alert('Success', 'Drink logged successfully!', [
@@ -66,20 +85,15 @@ export default function ConfirmScreen() {
 
         <Card>
           <Text style={styles.label}>Drink Type</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={type}
-              onValueChange={setType}
-              style={styles.picker}
-            >
-              <Picker.Item label="Beer" value="beer" />
-              <Picker.Item label="Wine" value="wine" />
-              <Picker.Item label="Spirits" value="spirits" />
-              <Picker.Item label="Cocktail" value="cocktail" />
-              <Picker.Item label="Seltzer" value="seltzer" />
-              <Picker.Item label="Other" value="other" />
-            </Picker>
-          </View>
+          <Pressable
+            onPress={() => {
+              setTempType(type || 'beer');
+              setTypeModalVisible(true);
+            }}
+            style={styles.fieldContainer}
+          >
+            <Text style={styles.fieldText}>{type || 'beer'}</Text>
+          </Pressable>
 
           <Input
             label="Quantity"
@@ -90,26 +104,101 @@ export default function ConfirmScreen() {
           />
 
           <Text style={styles.label}>Unit</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={unit}
-              onValueChange={setUnit}
-              style={styles.picker}
-            >
-              {UNITS.map((u) => (
-                <Picker.Item key={u} label={u} value={u} />
-              ))}
-            </Picker>
-          </View>
-
-          <Input
-            label="Notes (optional)"
-            placeholder="Add any notes..."
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-          />
+          <Pressable
+            onPress={() => {
+              setTempUnit(unit || UNITS[0]);
+              setUnitModalVisible(true);
+            }}
+            style={styles.fieldContainer}
+          >
+            <Text style={styles.fieldText}>{unit || UNITS[0]}</Text>
+          </Pressable>
         </Card>
+
+        {/* Type Picker Modal */}
+        <Modal
+          visible={typeModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setTypeModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Drink Type</Text>
+              </View>
+              <View style={styles.modalContent}>
+                <Picker
+                  selectedValue={tempType}
+                  onValueChange={(v) => setTempType(v as (typeof TYPE_OPTIONS)[number])}
+                  style={styles.modalPicker}
+                >
+                  <Picker.Item label="Beer" value="beer" />
+                  <Picker.Item label="Wine" value="wine" />
+                  <Picker.Item label="Spirits" value="spirits" />
+                  <Picker.Item label="Cocktail" value="cocktail" />
+                  <Picker.Item label="Seltzer" value="seltzer" />
+                  <Picker.Item label="Other" value="other" />
+                </Picker>
+              </View>
+              <View style={styles.modalActions}>
+                <Button
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => setTypeModalVisible(false)}
+                />
+                <Button
+                  title="Done"
+                  onPress={() => {
+                    setType(tempType);
+                    setTypeModalVisible(false);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Unit Picker Modal */}
+        <Modal
+          visible={unitModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setUnitModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalSheet}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Select Unit</Text>
+              </View>
+              <View style={styles.modalContent}>
+                <Picker
+                  selectedValue={tempUnit}
+                  onValueChange={(v) => setTempUnit(v)}
+                  style={styles.modalPicker}
+                >
+                  {UNITS.map((u) => (
+                    <Picker.Item key={u} label={u} value={u} />
+                  ))}
+                </Picker>
+              </View>
+              <View style={styles.modalActions}>
+                <Button
+                  title="Cancel"
+                  variant="outline"
+                  onPress={() => setUnitModalVisible(false)}
+                />
+                <Button
+                  title="Done"
+                  onPress={() => {
+                    setUnit(tempUnit);
+                    setUnitModalVisible(false);
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <View style={styles.buttonContainer}>
           <Button
@@ -170,6 +259,10 @@ const styles = StyleSheet.create({
     borderColor: '#D1D5DB',
     borderRadius: 8,
     marginBottom: 16,
+    height: 50,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
   },
   picker: {
     height: 50,
@@ -181,4 +274,53 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   cancelButton: {},
+  fieldContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    height: 50,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 16,
+  },
+  fieldText: {
+    fontSize: 16,
+    color: '#111827',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    paddingBottom: 16,
+  },
+  modalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContent: {
+    height: 200,
+  },
+  modalPicker: {
+    height: 200,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    gap: 12,
+    marginTop: 12,
+  },
 });

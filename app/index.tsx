@@ -1,61 +1,79 @@
 import React, { useState, useRef } from 'react';
+import { useEffect } from 'react';
 import { View, Text, Alert, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Camera, CameraType } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { uploadPhotoAsync, classifyPhoto } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 
 export default function MainScreen() {
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.replace('/(auth)/splash');
+      }
+    };
+    checkAuth();
+  }, []);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [cameraVisible, setCameraVisible] = useState(false);
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
 
-  const requestPermissions = async () => {
+  const ensureSignedIn = async (): Promise<boolean> => {
     try {
-      const { status: cameraStatus } =
-        await Camera.requestCameraPermissionsAsync();
-      const { status: libraryStatus } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        Alert.alert(
+          'Sign in required',
+          'Please sign in to log drinks.',
+          [{ text: 'OK', onPress: () => router.replace('/(auth)/splash') }]
+        );
+        return false;
+      }
+      return true;
+    } catch (e) {
+      Alert.alert('Sign in required', 'Please sign in to continue.');
+      router.replace('/(auth)/splash');
+      return false;
+    }
+  };
 
-      setHasPermission(
-        cameraStatus === 'granted' && libraryStatus === 'granted'
-      );
-
-      if (cameraStatus !== 'granted' || libraryStatus !== 'granted') {
+  const requestPermissions = async (): Promise<boolean> => {
+    try {
+      const cam = await requestPermission();
+      const { status: libraryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const ok = (cam?.granted ?? false) && libraryStatus === 'granted';
+      setHasPermission(ok);
+      if (!ok) {
         Alert.alert(
           'Permissions Required',
           'Camera and photo library access is required to log drinks.'
         );
       }
+      return ok;
     } catch (error) {
       console.log('Permission request failed:', error);
       setHasPermission(false);
+      return false;
     }
   };
 
   const handleCameraCapture = async () => {
-    if (hasPermission === null) {
-      await requestPermissions();
-      return;
-    }
-
-    if (hasPermission === false) {
-      Alert.alert(
-        'Permission Denied',
-        'Camera access is required to take photos.'
-      );
-      return;
-    }
-
+    if (!(await ensureSignedIn())) return;
+    const ok = await requestPermissions();
+    if (!ok) return;
     setCameraVisible(true);
   };
 
   const handlePhotoCapture = async () => {
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePictureAsync();
+        const photo = await cameraRef.current?.takePictureAsync({ quality: 0.8 });
         setCameraVisible(false);
         await processPhoto(photo.uri);
       } catch (error) {
@@ -66,15 +84,9 @@ export default function MainScreen() {
   };
 
   const handlePhotoPicker = async () => {
-    if (hasPermission === null) {
-      await requestPermissions();
-      return;
-    }
-
-    if (hasPermission === false) {
-      Alert.alert('Permission Denied', 'Photo library access is required.');
-      return;
-    }
+    if (!(await ensureSignedIn())) return;
+    const ok = await requestPermissions();
+    if (!ok) return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -113,7 +125,7 @@ export default function MainScreen() {
   if (cameraVisible) {
     return (
       <View style={styles.container}>
-        <Camera ref={cameraRef} style={styles.camera} type={CameraType.back}>
+        <CameraView ref={cameraRef} style={styles.camera} facing={'back'}>
           <View style={styles.cameraControls}>
             <View style={styles.buttonRow}>
               <Button
@@ -128,7 +140,7 @@ export default function MainScreen() {
               />
             </View>
           </View>
-        </Camera>
+        </CameraView>
       </View>
     );
   }
@@ -157,7 +169,10 @@ export default function MainScreen() {
             <Button
               title="✏️ Log Manually"
               variant="outline"
-              onPress={() => router.push('/log/manual')}
+              onPress={async () => {
+                if (!(await ensureSignedIn())) return;
+                router.push('/log/manual');
+              }}
               style={styles.secondaryButton}
             />
           </View>
@@ -167,7 +182,10 @@ export default function MainScreen() {
       <Button
         title="📊 Dashboard"
         variant="secondary"
-        onPress={() => router.push('/dashboard')}
+        onPress={async () => {
+          if (!(await ensureSignedIn())) return;
+          router.push('/dashboard');
+        }}
         style={styles.dashboardButton}
       />
     </View>

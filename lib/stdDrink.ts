@@ -1,21 +1,13 @@
-export const UNITS = [
-  'bottle',
-  'can',
-  'glass',
-  'shot',
-  'pint',
-  'cup',
-  'ml',
-  'oz',
-] as const;
+export const UNITS = ['oz'] as const;
 
-export const DEFAULT_STD: Record<string, number> = {
-  beer: 1.5, // 12oz beer
-  wine: 0.6, // 5oz wine
-  spirits: 0.6, // 1.5oz spirits
-  cocktail: 1.0, // varies
-  seltzer: 1.0, // 12oz seltzer
-  other: 1.0, // default
+// per-ounce multipliers (std drinks per 1 oz)
+const PER_OUNCE_STD: Record<string, number> = {
+  spirits: 1 / 1,   // 1 oz spirits = 1 std drink
+  beer: 1 / 12,     // 12 oz beer   = 1 std drink
+  wine: 1 / 5,      // 5 oz wine    = 1 std drink
+  cocktail: 1 / 5,  // treat cocktails ~ wine for MVP
+  seltzer: 1 / 12,  // like beer
+  other: 1 / 12,    // safe fallback
 };
 
 export function estimateStd(
@@ -23,22 +15,16 @@ export function estimateStd(
   quantity: number,
   unit: string
 ): number {
-  const baseStd = DEFAULT_STD[type] || 1.0;
+  // standardize on oz; ignore unit except for ml conversion in normalizeFromGuess
+  const perOz = PER_OUNCE_STD[type] ?? PER_OUNCE_STD.other;
 
-  // Convert common units to standard drinks
-  const unitMultipliers: Record<string, number> = {
-    bottle: 1.0,
-    can: 1.0,
-    glass: 1.0,
-    shot: 1.0,
-    pint: 1.33, // 16oz vs 12oz
-    cup: 1.0,
-    ml: 0.0338, // 1oz = 29.57ml
-    oz: 1.0,
-  };
+  const q = Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+  const raw = q * perOz;
 
-  const multiplier = unitMultipliers[unit] || 1.0;
-  return baseStd * quantity * multiplier;
+  // Round to nearest whole drink to avoid fractional entries, but never return 0 for nonzero input
+  const rounded = Math.max(1, Math.round(raw));
+
+  return Number.isFinite(rounded) && rounded >= 0 ? rounded : 0;
 }
 
 export function normalizeFromGuess(
@@ -50,6 +36,5 @@ export function normalizeFromGuess(
   if (unit === 'ml') {
     return { type, quantity: quantity / 29.57, unit: 'oz' };
   }
-
-  return { type, quantity, unit };
+  return { type, quantity, unit: 'oz' };
 }
